@@ -15,7 +15,7 @@ echo ""
 
 # Dependencias rápidas
 echo "Instalando dependencias..."
-$PYTHON -m pip install sounddevice soundfile gTTS pygame pynput bcrypt cryptography anthropic numpy SpeechRecognition
+$PYTHON -m pip install sounddevice soundfile gTTS pygame pynput bcrypt cryptography anthropic numpy
 
 # Directorio seguro
 mkdir -p "$HOME/.minka_secure"

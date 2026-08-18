@@ -13,7 +13,6 @@ import threading
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-import speech_recognition as sr
 from gtts import gTTS
 import pygame
 from pynput import keyboard
@@ -170,21 +169,7 @@ def procesar():
         print(f"\r  {B}📝 Transcribiendo...{R}                              ",
               end="", flush=True)
         lang  = "es" if modo == "e2k" else None
-        
-        # Convertir audio a formato para speech_recognition
-        audio_data = sr.AudioData((audio * 32767).astype(np.int16).tobytes(), SAMPLE_RATE, 2)
-        
-        try:
-            if lang == "es":
-                texto = reconocedor.recognize_google(audio_data, language="es-ES").strip()
-            else:
-                texto = reconocedor.recognize_google(audio_data).strip()
-        except sr.UnknownValueError:
-            texto = ""
-        except sr.RequestError as e:
-            print(f"\r  {RD}Error de reconocimiento: {e}{R}")
-            texto = ""
-        
+        texto = ""  # Requiere motor de reconocimiento de voz
         os.unlink(tmp.name)
 
         if not texto:
