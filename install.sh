@@ -14,12 +14,8 @@ echo "Python: $PYTHON"
 echo ""
 
 # Dependencias rápidas
-echo "1/2 Instalando dependencias principales..."
-$PYTHON -m pip install sounddevice soundfile gTTS pygame pynput bcrypt cryptography anthropic numpy
-
-echo ""
-echo "2/2 Instalando whisper (puede tardar ~5 min)..."
-$PYTHON -m pip install openai-whisper
+echo "Instalando dependencias..."
+$PYTHON -m pip install sounddevice soundfile gTTS pygame pynput bcrypt cryptography anthropic numpy SpeechRecognition
 
 # Directorio seguro
 mkdir -p "$HOME/.minka_secure"

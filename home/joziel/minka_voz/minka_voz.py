@@ -13,7 +13,7 @@ import threading
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-import whisper
+import speech_recognition as sr
 from gtts import gTTS
 import pygame
 from pynput import keyboard
@@ -48,7 +48,7 @@ audio_chunks   = []
 modo           = "k2e"
 procesando     = False
 espacio_activo = False
-modelo_whisper = None
+reconocedor    = sr.Recognizer()
 
 # ── UI ───────────────────────────────────────────────────────────────────────────
 def cls():
@@ -74,10 +74,7 @@ def esperar_enter():
 
 # ── Cargar modelos ────────────────────────────────────────────────────────────────
 def cargar_modelos():
-    global modelo_whisper
-    linea(f"{Y}⏳ Cargando modelo de voz Whisper...{R}")
-    modelo_whisper = whisper.load_model("base")
-    linea(f"{G}✓ Whisper listo{R}")
+    pass
 
 # ── Grabación ────────────────────────────────────────────────────────────────────
 def _hilo_grabacion():
@@ -173,7 +170,21 @@ def procesar():
         print(f"\r  {B}📝 Transcribiendo...{R}                              ",
               end="", flush=True)
         lang  = "es" if modo == "e2k" else None
-        texto = modelo_whisper.transcribe(tmp.name, language=lang)["text"].strip()
+        
+        # Convertir audio a formato para speech_recognition
+        audio_data = sr.AudioData((audio * 32767).astype(np.int16).tobytes(), SAMPLE_RATE, 2)
+        
+        try:
+            if lang == "es":
+                texto = reconocedor.recognize_google(audio_data, language="es-ES").strip()
+            else:
+                texto = reconocedor.recognize_google(audio_data).strip()
+        except sr.UnknownValueError:
+            texto = ""
+        except sr.RequestError as e:
+            print(f"\r  {RD}Error de reconocimiento: {e}{R}")
+            texto = ""
+        
         os.unlink(tmp.name)
 
         if not texto:
