@@ -47,7 +47,6 @@ audio_chunks   = []
 modo           = "k2e"
 procesando     = False
 espacio_activo = False
-reconocedor    = sr.Recognizer()
 
 # ── UI ───────────────────────────────────────────────────────────────────────────
 def cls():
