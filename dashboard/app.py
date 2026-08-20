@@ -50,8 +50,8 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
 
-        s, msg = sec.authenticate(username, password)
-        if s:
+        success, msg, s = sec.authenticate(username, password)
+        if success:
             if s['role'] not in ('admin', 'teacher'):
                 flash('Acceso denegado — se requiere rol de profesor', 'error')
                 return render_template('login.html')
