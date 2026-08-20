@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — MINKA VOZ{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="card-grid">
+    <div class="card">
+        <div class="number">{{ total_words }}</div>
+        <div class="label">Palabras en diccionario</div>
+    </div>
+    <div class="card">
+        <div class="number">{{ total_conversations }}</div>
+        <div class="label">Traducciones totales</div>
+    </div>
+    <div class="card">
+        <div class="number">{{ total_users }}</div>
+        <div class="label">Usuarios activos</div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <div class="card">
+        <h3 style="color: var(--green); margin-bottom: 15px;">Actividad por usuario</h3>
+        {% if top_users %}
+        <div class="bar-chart">
+            {% set max_count = top_users[0]['cnt'] %}
+            {% for u in top_users %}
+            <div class="bar" style="height: {{ (u['cnt'] / max_count * 100)|int }}%;">
+                <span class="bar-label">{{ u['user'][:8] }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        <div style="margin-top: 25px;">
+            {% for u in top_users %}
+            <div style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border);">
+                <span>{{ u['user'] }}</span>
+                <span style="color: var(--green);">{{ u['cnt'] }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p style="color: var(--gray);">Sin datos aún</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h3 style="color: var(--green); margin-bottom: 15px;">Actividad reciente</h3>
+        {% for r in recent %}
+        <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--gray); font-size: 12px;">{{ r['fecha'][11:16] if r['fecha'] else '' }}</span>
+                <span class="tag tag-teacher">{{ r['user'] }}</span>
+            </div>
+            <div style="font-size: 13px; margin-top: 4px;">
+                {{ r['message'][:30] }} → {{ r['texto_traducido'][:30] }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+    <h3 style="color: var(--green); margin-bottom: 15px;">Actividad diaria (últimos 7 días)</h3>
+    {% if daily_activity %}
+    <div class="bar-chart" style="height: 120px;">
+        {% set max_d = daily_activity[0]['cnt'] %}
+        {% for d in daily_activity %}
+        <div class="bar" style="height: {{ (d['cnt'] / max_d * 100)|int }}%;">
+            <span class="bar-label">{{ d['dia'][5:] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    <div style="margin-top: 25px;">
+        {% for d in daily_activity %}
+        <div style="display: inline-block; margin-right: 20px; font-size: 13px;">
+            <span style="color: var(--gray);">{{ d['dia'][5:] }}</span>
+            <span style="color: var(--green); font-weight: 600;">{{ d['cnt'] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p style="color: var(--gray);">Sin datos aún</p>
+    {% endif %}
+</div>
+{% endblock %}

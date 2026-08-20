@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Historial — MINKA VOZ{% endblock %}
+{% block content %}
+<div class="section-header">
+    <h1>📜 Historial de Traducciones</h1>
+    <span style="color: var(--gray);">{{ history|length }} registros</span>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <form method="GET" class="form-inline">
+        <input type="search" name="search" value="{{ search }}" placeholder="Buscar en historial...">
+        <button type="submit" class="btn btn-blue">🔍 Buscar</button>
+        {% if search %}
+        <a href="{{ url_for('history') }}" class="btn btn-gray">Limpiar</a>
+        {% endif %}
+    </form>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Fecha</th>
+            <th>Usuario</th>
+            <th>Original</th>
+            <th>Traducción</th>
+            <th>Dirección</th>
+            <th>Fuente</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for h in history %}
+        <tr>
+            <td>{{ h['fecha'][11:16] if h['fecha'] else '-' }}</td>
+            <td>{{ h['user'] }}</td>
+            <td>{{ h['message'][:50] }}</td>
+            <td style="color: var(--green);">{{ h['texto_traducido'][:50] }}</td>
+            <td>
+                {% if h['direccion'] == 'k2e' %}
+                <span class="tag tag-teacher">K→E</span>
+                {% else %}
+                <span class="tag tag-admin">E→K</span>
+                {% endif %}
+            </td>
+            <td>{{ h['fuente'] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Diccionario — MINKA VOZ{% endblock %}
+{% block content %}
+<div class="section-header">
+    <h1>📖 Diccionario Kogui</h1>
+    <span style="color: var(--gray);">{{ words|length }} palabras</span>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <form method="GET" class="form-inline">
+        <input type="search" name="search" value="{{ search }}" placeholder="Buscar palabra...">
+        <button type="submit" class="btn btn-blue">🔍 Buscar</button>
+        {% if search %}
+        <a href="{{ url_for('dictionary') }}" class="btn btn-gray">Limpiar</a>
+        {% endif %}
+    </form>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <h3 style="color: var(--green); margin-bottom: 15px;">Agregar palabra</h3>
+    <form method="POST" action="{{ url_for('add_word') }}" class="form-inline">
+        <input type="text" name="kogui" placeholder="Kogui" required>
+        <input type="text" name="spanish" placeholder="Español" required>
+        <select name="categoria">
+            <option value="general">general</option>
+            <option value="saludo">saludo</option>
+            <option value="familia">familia</option>
+            <option value="naturaleza">naturaleza</option>
+            <option value="animal">animal</option>
+            <option value="accion">acción</option>
+            <option value="numero">número</option>
+        </select>
+        <input type="text" name="notas" placeholder="Notas (opcional)">
+        <button type="submit" class="btn btn-green">➕ Agregar</button>
+    </form>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Kogui</th>
+            <th>Español</th>
+            <th>Categoría</th>
+            <th>Notas</th>
+            <th>Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for w in words %}
+        <tr>
+            <td>{{ w['id'] }}</td>
+            <td><strong>{{ w['kogui'] }}</strong></td>
+            <td>{{ w['spanish'] }}</td>
+            <td><span class="tag tag-teacher">{{ w['categoria'] }}</span></td>
+            <td>{{ w['notas'] or '-' }}</td>
+            <td>
+                <a href="{{ url_for('edit_word', word_id=w['id']) }}" class="btn btn-yellow" style="padding: 4px 10px; font-size: 12px;">✏ Editar</a>
+                <a href="{{ url_for('delete_word', word_id=w['id']) }}" class="btn btn-red" style="padding: 4px 10px; font-size: 12px;" onclick="return confirm('¿Eliminar?')">🗑</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

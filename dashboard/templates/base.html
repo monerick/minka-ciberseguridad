@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MINKA VOZ Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    {% if current_user %}
+    <nav class="sidebar">
+        <div class="logo">
+            <h2>MINKA VOZ</h2>
+            <span>Panel Profesor</span>
+        </div>
+        <ul>
+            <li><a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">📊 Dashboard</a></li>
+            <li><a href="{{ url_for('dictionary') }}" class="{% if request.endpoint == 'dictionary' %}active{% endif %}">📖 Diccionario</a></li>
+            <li><a href="{{ url_for('history') }}" class="{% if request.endpoint == 'history' %}active{% endif %}">📜 Historial</a></li>
+            <li><a href="{{ url_for('users') }}" class="{% if request.endpoint == 'users' %}active{% endif %}">👥 Usuarios</a></li>
+            <li><a href="{{ url_for('audit') }}" class="{% if request.endpoint == 'audit' %}active{% endif %}">🔍 Audit Log</a></li>
+        </ul>
+        <div class="user-info">
+            <span>{{ current_user.username }}</span>
+            <span class="role">{{ current_user.role }}</span>
+            <a href="{{ url_for('logout') }}" class="logout-btn">Cerrar sesión</a>
+        </div>
+    </nav>
+    {% endif %}
+
+    <main class="{% if not current_user %}full{% endif %}">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

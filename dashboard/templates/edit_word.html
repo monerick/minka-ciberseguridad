@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Editar Palabra — MINKA VOZ{% endblock %}
+{% block content %}
+<div class="section-header">
+    <h1>✏ Editar Palabra</h1>
+</div>
+
+<div class="card" style="max-width: 500px;">
+    <form method="POST">
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; color: var(--gray-light); font-size: 13px;">Kogui</label>
+            <input type="text" name="kogui" value="{{ word['kogui'] }}" required style="width: 100%;">
+        </div>
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; color: var(--gray-light); font-size: 13px;">Español</label>
+            <input type="text" name="spanish" value="{{ word['spanish'] }}" required style="width: 100%;">
+        </div>
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; color: var(--gray-light); font-size: 13px;">Categoría</label>
+            <select name="categoria" style="width: 100%;">
+                {% for cat in ['general', 'saludo', 'familia', 'naturaleza', 'animal', 'accion', 'numero'] %}
+                <option value="{{ cat }}" {% if word['categoria'] == cat %}selected{% endif %}>{{ cat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 5px; color: var(--gray-light); font-size: 13px;">Notas</label>
+            <textarea name="notas" rows="3">{{ word['notas'] or '' }}</textarea>
+        </div>
+        <div class="form-inline">
+            <button type="submit" class="btn btn-green">💾 Guardar</button>
+            <a href="{{ url_for('dictionary') }}" class="btn btn-gray">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

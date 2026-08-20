@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Usuarios — MINKA VOZ{% endblock %}
+{% block content %}
+<div class="section-header">
+    <h1>👥 Gestión de Usuarios</h1>
+    <span style="color: var(--gray);">{{ users|length }} usuarios</span>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <h3 style="color: var(--green); margin-bottom: 15px;">Crear usuario</h3>
+    <form method="POST" action="{{ url_for('create_user') }}" class="form-inline">
+        <input type="text" name="username" placeholder="Usuario" required>
+        <input type="password" name="password" placeholder="Contraseña" required>
+        <select name="role">
+            <option value="user">user</option>
+            <option value="teacher">teacher</option>
+            <option value="admin">admin</option>
+        </select>
+        <button type="submit" class="btn btn-green">➕ Crear</button>
+    </form>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Usuario</th>
+            <th>Rol</th>
+            <th>Creado</th>
+            <th>Último login</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for u in users %}
+        <tr>
+            <td>{{ u[0] }}</td>
+            <td><strong>{{ u[1] }}</strong></td>
+            <td>
+                <span class="tag tag-{{ u[2] }}">{{ u[2] }}</span>
+            </td>
+            <td>{{ u[3][:16] if u[3] else '-' }}</td>
+            <td>{{ u[4][:16] if u[4] else 'Nunca' }}</td>
+            <td>
+                {% if u[5] %}
+                <span class="tag tag-active">Activo</span>
+                {% else %}
+                <span class="tag tag-inactive">Inactivo</span>
+                {% endif %}
+            </td>
+            <td>
+                <form method="POST" action="{{ url_for('change_role', user_id=u[0]) }}" style="display: inline;">
+                    <select name="role" onchange="this.form.submit()" style="padding: 4px; font-size: 12px;">
+                        <option value="user" {% if u[2] == 'user' %}selected{% endif %}>user</option>
+                        <option value="teacher" {% if u[2] == 'teacher' %}selected{% endif %}>teacher</option>
+                        <option value="admin" {% if u[2] == 'admin' %}selected{% endif %}>admin</option>
+                    </select>
+                </form>
+                {% if u[5] %}
+                <a href="{{ url_for('deactivate_user', user_id=u[0]) }}" class="btn btn-red" style="padding: 4px 8px; font-size: 11px;" onclick="return confirm('¿Desactivar?')">🚫</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
