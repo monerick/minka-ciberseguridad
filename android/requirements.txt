@@ -1,0 +1,4 @@
+kivy>=2.2.0
+pillow
+bcrypt
+cryptography
