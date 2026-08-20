@@ -85,4 +85,3 @@ android.compile_sdk_version = 31
 android.build_tools_version = 31.0.3
 
 # Permisos
-android.permissions = INTERNET
