@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 MINKA VOZ — Traductor de voz Kogui <-> Español
-Versión 2.0 — Con seguridad, favoritos, notas y perfil
+Con diccionario propio, historial y push-to-talk con ESPACIO
+Usa Google Gemini para traducción (gratis)
 """
 
 import os
@@ -12,21 +13,24 @@ import threading
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
+import whisper
 from gtts import gTTS
 import pygame
 from pynput import keyboard
 import database as db
-import security as sec
 
+# ── Configuración ───────────────────────────────────────────────────────────────
 SAMPLE_RATE = 16000
 
 KOGUI_CONTEXTO = """
 Eres un traductor especializado en la lengua Kogui (Kággaba),
 lengua indígena de la Sierra Nevada de Santa Marta, Colombia.
 Responde ÚNICAMENTE con la traducción, sin explicaciones.
+Si no conoces una palabra exacta, usa la más cercana e indícalo entre paréntesis.
 Lengua SOV, sin género gramatical.
 """
 
+# ── Colores ─────────────────────────────────────────────────────────────────────
 R  = "\033[0m"
 G  = "\033[92m"
 B  = "\033[94m"
@@ -37,32 +41,25 @@ CY = "\033[96m"
 BO = "\033[1m"
 MG = "\033[95m"
 
-grabando = False
-audio_chunks = []
-modo = "k2e"
-procesando = False
+# ── Estado global ────────────────────────────────────────────────────────────────
+grabando       = False
+audio_chunks   = []
+modo           = "k2e"
+procesando     = False
 espacio_activo = False
-audio_lock = threading.Lock()
-pygame_initialized = False
-
-current_session = None
-current_master_password = None
+modelo_whisper = None
 
 # ── UI ───────────────────────────────────────────────────────────────────────────
-
 def cls():
     os.system('clear')
 
 def banner():
     cls()
-    user_info = ""
-    if current_session:
-        user_info = f"{GR}[{current_session['username']}]{R}"
     print(f"""
 {G}{BO}  ╔══════════════════════════════════════════╗
   ║   🌿  M I N K A  V O Z  🌿            ║
   ║   Traductor  Kogui ↔ Español           ║
-  ╚══════════════════════════════════════════╝{R}  {user_info}
+  ╚══════════════════════════════════════════╝{R}
 """)
 
 def linea(t=""):
@@ -74,47 +71,39 @@ def separador():
 def esperar_enter():
     input(f"\n  {GR}Presiona ENTER para continuar...{R}")
 
-def init_pygame():
-    global pygame_initialized
-    if not pygame_initialized:
-        pygame.mixer.init()
-        pygame_initialized = True
+# ── Cargar modelos ────────────────────────────────────────────────────────────────
+def cargar_modelos():
+    global modelo_whisper
+    linea(f"{Y}⏳ Cargando modelo de voz Whisper...{R}")
+    modelo_whisper = whisper.load_model("base")
+    linea(f"{G}✓ Whisper listo{R}")
 
-def shutdown_pygame():
-    global pygame_initialized
-    if pygame_initialized:
-        try:
-            pygame.mixer.quit()
-        except Exception:
-            pass
-        pygame_initialized = False
-
-# ── Grabación (con lock para thread safety) ─────────────────────────────────────
-
+# ── Grabación ────────────────────────────────────────────────────────────────────
 def _hilo_grabacion():
     global audio_chunks
-    with audio_lock:
-        audio_chunks = []
+    audio_chunks = []
 
     def callback(indata, frames, time_info, status):
         if grabando:
-            with audio_lock:
-                audio_chunks.append(indata.copy())
+            audio_chunks.append(indata.copy())
 
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='float32', callback=callback):
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+                        dtype='float32', callback=callback):
         while grabando:
             time.sleep(0.02)
 
 hilo_grab = None
 
 def iniciar_grabacion():
-    global grabando, hilo_grab
+    global grabando, hilo_grab, audio_chunks
     if grabando:
         return
     grabando = True
+    audio_chunks = []
     hilo_grab = threading.Thread(target=_hilo_grabacion, daemon=True)
     hilo_grab.start()
-    print(f"\r  {RD}● GRABANDO...{R}  suelta ESPACIO para traducir        ", end="", flush=True)
+    print(f"\r  {RD}● GRABANDO...{R}  suelta ESPACIO para traducir        ",
+          end="", flush=True)
 
 def detener_grabacion():
     global grabando, hilo_grab
@@ -122,32 +111,29 @@ def detener_grabacion():
         return
     grabando = False
     if hilo_grab:
-        hilo_grab.join(timeout=2)
-        hilo_grab = None
+        hilo_grab.join(timeout=1)
 
 # ── Síntesis de voz ──────────────────────────────────────────────────────────────
-
 def hablar(texto):
     try:
-        init_pygame()
         tts = gTTS(text=texto, lang='es', slow=False)
         mp3 = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False)
         tts.save(mp3.name)
+        pygame.mixer.init()
         pygame.mixer.music.load(mp3.name)
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             time.sleep(0.05)
-        try:
-            os.unlink(mp3.name)
-        except OSError:
-            pass
+        pygame.mixer.quit()
+        os.unlink(mp3.name)
     except Exception as e:
         linea(f"{RD}Error audio: {e}{R}")
 
-# ── Traducción ──────────────────────────────────────────────────────────────────
-
+# ── Traducción solo diccionario ───────────────────────────────────────────────────
 def traducir_inteligente(texto, direccion):
+    """Solo usa el diccionario. Si no encuentra, avisa."""
     encontradas = db.buscar_en_diccionario(texto, direccion)
+
     if encontradas:
         palabras = texto.split()
         resultado = []
@@ -159,14 +145,15 @@ def traducir_inteligente(texto, direccion):
             else:
                 todas = False
                 resultado.append(f"[{p_limpia}]")
+
         if todas:
             return " ".join(resultado), "diccionario"
         else:
             return " ".join(resultado), "diccionario_parcial"
+
     return None, "no_encontrado"
 
-# ── Procesar audio ──────────────────────────────────────────────────────────────
-
+# ── Procesar audio ────────────────────────────────────────────────────────────────
 def procesar():
     global procesando
     if procesando:
@@ -174,29 +161,25 @@ def procesar():
     procesando = True
 
     try:
-        with audio_lock:
-            if not audio_chunks:
-                print(f"\r  {Y}⚠ No se grabó audio{R}                          ")
-                return
-            chunks_copy = list(audio_chunks)
-
-        audio = np.concatenate(chunks_copy, axis=0)
-        tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        sf.write(tmp.name, audio, SAMPLE_RATE)
-
-        print(f"\r  {B}📝 Transcribiendo...{R}                              ", end="", flush=True)
-
-        texto = ""  # Motor de reconocimiento de voz pendiente
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
-
-        if not texto:
-            print(f"\r  {Y}⚠ Requiere motor de reconocimiento de voz{R}     ")
+        if not audio_chunks:
+            print(f"\r  {Y}⚠ No se grabó audio{R}                          ")
             return
 
-        origen = "Kogui" if modo == "k2e" else "Español"
+        audio = np.concatenate(audio_chunks, axis=0)
+        tmp   = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        sf.write(tmp.name, audio, SAMPLE_RATE)
+
+        print(f"\r  {B}📝 Transcribiendo...{R}                              ",
+              end="", flush=True)
+        lang  = "es" if modo == "e2k" else None
+        texto = modelo_whisper.transcribe(tmp.name, language=lang)["text"].strip()
+        os.unlink(tmp.name)
+
+        if not texto:
+            print(f"\r  {Y}⚠ No se entendió, intenta de nuevo{R}           ")
+            return
+
+        origen  = "Kogui"   if modo == "k2e" else "Español"
         destino = "Español" if modo == "k2e" else "Kogui"
 
         print(f"\r                                                    ")
@@ -215,13 +198,14 @@ def procesar():
             print()
             return
 
-        fuente_label = f"{G}[diccionario]{R}" if fuente == "diccionario" else f"{Y}[parcial]{R}"
+        fuente_label = f"{G}[diccionario]{R}" if fuente == "diccionario" \
+                  else f"{Y}[diccionario parcial]{R}"
+
         linea(f"{GR}└─ {destino} {fuente_label}{R}")
         linea(f"{G}{BO}   {traduccion}{R}")
         print()
 
-        user = current_session["username"] if current_session else "minka_voz"
-        db.guardar_conversacion(texto, traduccion, modo, fuente, user)
+        db.guardar_conversacion(texto, traduccion, modo, fuente)
 
         linea(f"{B}🔊 Reproduciendo...{R}")
         hablar(traduccion)
@@ -236,8 +220,7 @@ def procesar():
     finally:
         procesando = False
 
-# ── Pantalla traducir ──────────────────────────────────────────────────────────
-
+# ── Pantalla traducir ─────────────────────────────────────────────────────────────
 def pantalla_traducir():
     global modo, espacio_activo
 
@@ -286,8 +269,7 @@ def pantalla_traducir():
         time.sleep(0.1)
     listener.stop()
 
-# ── Diccionario ────────────────────────────────────────────────────────────────
-
+# ── Diccionario ───────────────────────────────────────────────────────────────────
 def pantalla_diccionario():
     while True:
         banner()
@@ -297,8 +279,6 @@ def pantalla_diccionario():
         linea(f"  {BO}[2]{R}  Buscar palabra")
         linea(f"  {BO}[3]{R}  Agregar palabra nueva")
         linea(f"  {BO}[4]{R}  Eliminar palabra")
-        linea(f"  {BO}[5]{R}  ⭐ Mis favoritos")
-        linea(f"  {BO}[6]{R}  📝 Mis notas")
         linea(f"  {BO}[B]{R}  Volver")
         print()
         op = input("  › ").strip().lower()
@@ -312,10 +292,6 @@ def pantalla_diccionario():
             _agregar_palabra()
         elif op == '4':
             _eliminar_palabra()
-        elif op == '5':
-            _ver_favoritos()
-        elif op == '6':
-            _ver_notas()
 
 def _ver_palabras():
     banner()
@@ -332,8 +308,7 @@ def _ver_palabras():
                 print()
                 linea(f"{CY}{BO}▸ {categoria.upper()}{R}")
             nota = f"  {GR}({notas}){R}" if notas else ""
-            fav = f" {Y}⭐{R}" if current_session and db.is_favorite(pid) else ""
-            linea(f"   {G}{BO}{espanol:<22}{R} →  {kogui}{nota}{fav}  {GR}#{pid}{R}")
+            linea(f"   {G}{BO}{espanol:<22}{R} →  {kogui}{nota}  {GR}#{pid}{R}")
         print()
         linea(f"{GR}Total: {len(palabras)} palabras{R}")
     esperar_enter()
@@ -351,27 +326,10 @@ def _buscar_palabra():
         linea(f"{Y}No se encontró '{termino}'{R}")
     else:
         for pid, kogui, espanol, categoria, notas, fecha in resultados:
-            fav = f" {Y}⭐{R}" if current_session and db.is_favorite(pid) else ""
-            linea(f"  {G}{BO}{espanol:<22}{R} →  {kogui}  {GR}[{categoria}] #{pid}{R}{fav}")
+            linea(f"  {G}{BO}{espanol:<22}{R} →  {kogui}  {GR}[{categoria}] #{pid}{R}")
             if notas:
                 linea(f"     {GR}Nota: {notas}{R}")
-            if current_session:
-                linea(f"     {GR}[F] Favorito  [N] Nota{R}")
-        print()
-        op = input("  Acción (F/N/B): ").strip().lower()
-        if op == 'f' and resultados:
-            pid = resultados[0][0]
-            if db.is_favorite(pid):
-                db.remove_favorite(pid)
-                linea(f"{Y}  Eliminado de favoritos{R}")
-            else:
-                db.add_favorite(pid)
-                linea(f"{G}  Agregado a favoritos ⭐{R}")
-            esperar_enter()
-        elif op == 'n' and resultados:
-            _agregar_nota(resultados[0][0])
-    if not resultados or op not in ('f', 'n'):
-        esperar_enter()
+    esperar_enter()
 
 def _agregar_palabra():
     banner()
@@ -386,7 +344,7 @@ def _agregar_palabra():
     print()
     linea(f"{GR}Categorías: saludo, familia, naturaleza, animal, accion, numero, general{R}")
     categoria = input("  Categoría [general]: ").strip() or "general"
-    notas = input("  Notas (opcional):    ").strip()
+    notas     = input("  Notas (opcional):    ").strip()
     print()
     linea(f"  {CY}Kogui:{R}     {kogui}")
     linea(f"  {CY}Español:{R}   {espanol}")
@@ -426,59 +384,7 @@ def _eliminar_palabra():
         linea(f"  {RD}ID inválido{R}")
     esperar_enter()
 
-# ── Favoritos ──────────────────────────────────────────────────────────────────
-
-def _ver_favoritos():
-    if not current_session:
-        linea(f"{Y}  Inicia sesión para ver favoritos{R}")
-        esperar_enter()
-        return
-    banner()
-    linea(f"{Y}{BO}⭐ Mis favoritos{R}")
-    print()
-    favoritos = db.get_favorites()
-    if not favoritos:
-        linea(f"{Y}No tienes favoritos aún{R}")
-        linea(f"{GR}Busca una palabra en el diccionario y presiona [F] para agregar{R}")
-    else:
-        for pid, kogui, espanol, categoria, added_at in favoritos:
-            linea(f"  {G}{BO}{espanol:<22}{R} →  {kogui}  {GR}[{categoria}] #{pid}{R}")
-        print()
-        linea(f"{GR}Total: {len(favoritos)} favoritos{R}")
-    esperar_enter()
-
-def _agregar_nota(word_id):
-    if not current_session:
-        linea(f"{Y}  Inicia sesión para agregar notas{R}")
-        return
-    print()
-    nota = input("  Nota: ").strip()
-    if nota:
-        db.save_user_note(word_id, nota)
-        linea(f"{G}  ✓ Nota guardada{R}")
-
-# ── Notas ──────────────────────────────────────────────────────────────────────
-
-def _ver_notas():
-    if not current_session:
-        linea(f"{Y}  Inicia sesión para ver notas{R}")
-        esperar_enter()
-        return
-    banner()
-    linea(f"{CY}{BO}📝 Mis notas{R}")
-    print()
-    notas = db.get_user_notes()
-    if not notas:
-        linea(f"{Y}No tienes notas aún{R}")
-    else:
-        for nid, word_id, note, created_at in notas:
-            linea(f"  {GR}[{created_at}]{R} Palabra #{word_id}: {note}")
-        print()
-        linea(f"{GR}Total: {len(notas)} notas{R}")
-    esperar_enter()
-
-# ── Historial ──────────────────────────────────────────────────────────────────
-
+# ── Historial ─────────────────────────────────────────────────────────────────────
 def pantalla_historial():
     while True:
         banner()
@@ -500,8 +406,7 @@ def _ver_historial():
     banner()
     linea(f"{B}{BO}📜 Últimas traducciones{R}")
     print()
-    user = current_session["username"] if current_session else "minka_voz"
-    historial = db.obtener_historial(20, user)
+    historial = db.obtener_historial(20)
     if not historial:
         linea(f"{Y}No hay conversaciones aún{R}")
     else:
@@ -523,8 +428,7 @@ def _buscar_historial():
     termino = input("  Buscar: ").strip()
     if not termino:
         return
-    user = current_session["username"] if current_session else "minka_voz"
-    resultados = db.buscar_historial(termino, user)
+    resultados = db.buscar_historial(termino)
     print()
     if not resultados:
         linea(f"{Y}No se encontró '{termino}'{R}")
@@ -538,14 +442,12 @@ def _buscar_historial():
         linea(f"\n{GR}Encontradas: {len(resultados)}{R}")
     esperar_enter()
 
-# ── Estadísticas ───────────────────────────────────────────────────────────────
-
+# ── Estadísticas ──────────────────────────────────────────────────────────────────
 def pantalla_estadisticas():
     banner()
     linea(f"{CY}{BO}📊 Estadísticas{R}")
     print()
-    user = current_session["username"] if current_session else None
-    s = db.estadisticas(user)
+    s = db.estadisticas()
     linea(f"  {BO}Diccionario{R}")
     linea(f"  {G}●{R} Palabras Kogui:           {BO}{s['palabras']}{R}")
     print()
@@ -560,113 +462,7 @@ def pantalla_estadisticas():
         linea(f"  {GR}El {pct}% de traducciones usaron el diccionario propio{R}")
     esperar_enter()
 
-# ── Perfil ─────────────────────────────────────────────────────────────────────
-
-def pantalla_perfil():
-    if not current_session:
-        return
-    while True:
-        banner()
-        linea(f"{CY}{BO}👤 Mi Perfil{R}")
-        print()
-        linea(f"  {BO}Usuario:{R}  {current_session['username']}")
-        linea(f"  {BO}Rol:{R}      {current_session['role']}")
-        linea(f"  {BO}Sesión:{R}   {current_session['created_at'][:10]}")
-        print()
-        separador()
-        print()
-        linea(f"  {BO}[1]{R}  Cambiar contraseña")
-        linea(f"  {BO}[2]{R}  🔑 Datos encriptados")
-        linea(f"  {BO}[3]{R}  🔒 Cerrar sesión")
-        linea(f"  {BO}[B]{R}  Volver")
-        print()
-
-        op = input("  › ").strip().lower()
-        if op == 'b':
-            break
-        elif op == '1':
-            _cambiar_contrasena()
-        elif op == '2':
-            _pantalla_datos_seguros()
-        elif op == '3':
-            if input(f"  {RD}¿Cerrar sesión? [s/n]: {R}").strip().lower() == 's':
-                sec.logout()
-                linea(f"{G}  Sesión cerrada{R}")
-                time.sleep(1)
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-
-def _cambiar_contrasena():
-    print(f"\n{CY}{BO}  ═══ CAMBIAR CONTRASEÑA ═══{R}\n")
-    import getpass
-    current = getpass.getpass("  Contraseña actual: ").strip()
-    new_pass = getpass.getpass("  Nueva contraseña: ").strip()
-    confirm = getpass.getpass("  Confirmar: ").strip()
-
-    if new_pass != confirm:
-        linea(f"{RD}  Las contraseñas no coinciden{R}")
-        esperar_enter()
-        return
-
-    ok, msg = sec.change_password(current_session, current, new_pass)
-    if ok:
-        linea(f"{G}  ✓ {msg}{R}")
-    else:
-        linea(f"{RD}  ✗ {msg}{R}")
-    esperar_enter()
-
-def _pantalla_datos_seguros():
-    global current_master_password
-    print(f"\n{CY}{BO}  ═══ DATOS ENCRIPTADOS ═══{R}\n")
-
-    keys = sec.list_secure_keys(current_session["user_id"])
-    if keys:
-        linea(f"  {BO}Datos guardados:{R}")
-        for k, ca, ua in keys:
-            linea(f"  {G}•{R} {k}  {GR}({ua}){R}")
-        print()
-    else:
-        linea(f"{GR}  No hay datos encriptados aún{R}\n")
-
-    linea(f"  {BO}[1]{R}  Guardar dato")
-    linea(f"  {BO}[2]{R}  Cargar dato")
-    linea(f"  {BO}[3]{R}  Eliminar dato")
-    linea(f"  {BO}[B]{R}  Volver")
-    print()
-
-    op = input("  › ").strip().lower()
-    if op == '1':
-        key = input("  Clave del dato: ").strip()
-        value = input("  Valor: ").strip()
-        if key and value:
-            if not current_master_password:
-                import getpass
-                current_master_password = getpass.getpass("  Contraseña maestra: ").strip()
-            if sec.save_secure_data(current_session["user_id"], key, value, current_master_password):
-                linea(f"{G}  ✓ Dato guardado encriptado{R}")
-            else:
-                linea(f"{RD}  ✗ Error al guardar{R}")
-        esperar_enter()
-    elif op == '2':
-        key = input("  Clave del dato: ").strip()
-        if key:
-            if not current_master_password:
-                import getpass
-                current_master_password = getpass.getpass("  Contraseña maestra: ").strip()
-            value = sec.load_secure_data(current_session["user_id"], key, current_master_password)
-            if value:
-                linea(f"{G}  Valor: {value}{R}")
-            else:
-                linea(f"{Y}  Dato no encontrado o contraseña incorrecta{R}")
-        esperar_enter()
-    elif op == '3':
-        key = input("  Clave a eliminar: ").strip()
-        if key:
-            sec.delete_secure_data(current_session["user_id"], key)
-            linea(f"{G}  ✓ Eliminado{R}")
-        esperar_enter()
-
-# ── Menú principal ─────────────────────────────────────────────────────────────
-
+# ── Menú principal ────────────────────────────────────────────────────────────────
 def menu_principal():
     while True:
         banner()
@@ -679,7 +475,6 @@ def menu_principal():
         linea(f"  {BO}[2]{R}  📖  Diccionario Kogui")
         linea(f"  {BO}[3]{R}  📜  Historial")
         linea(f"  {BO}[4]{R}  📊  Estadísticas")
-        linea(f"  {BO}[5]{R}  👤  Mi Perfil")
         linea(f"  {BO}[Q]{R}  Salir")
         print()
         separador()
@@ -687,8 +482,6 @@ def menu_principal():
 
         op = input("  › ").strip().lower()
         if op == 'q':
-            sec.logout()
-            shutdown_pygame()
             banner()
             linea(f"{G}Hasta pronto 🌿{R}\n")
             break
@@ -700,42 +493,13 @@ def menu_principal():
             pantalla_historial()
         elif op == '4':
             pantalla_estadisticas()
-        elif op == '5':
-            pantalla_perfil()
 
-# ── Main ───────────────────────────────────────────────────────────────────────
-
+# ── Main ──────────────────────────────────────────────────────────────────────────
 def main():
-    global current_session, current_master_password
-
-    sec.init_security_db()
-
-    session = sec.get_current_session()
-    if session:
-        current_session = session
-    else:
-        session, master_password = sec.pantalla_login()
-        if not session:
-            banner()
-            linea(f"{G}  Hasta pronto 🌿{R}\n")
-            return
-        current_session = session
-        current_master_password = master_password
-
-    user_db_path = os.path.join(sec.HIDDEN_DB_DIR, f"user_{current_session['user_id']}.db")
-    db.set_user_db(user_db_path, current_master_password)
-    db.init_user_db()
-
-    modo = db.get_user_setting("default_mode", "k2e")
-    globals()['modo'] = modo
-
-    banner()
-    linea(f"{G}  Bienvenido, {current_session['username']}{R}")
-    if current_session['role'] == 'admin':
-        linea(f"{CY}  Rol: Administrador{R}")
-    time.sleep(1)
-
     db.inicializar_db()
+    banner()
+    cargar_modelos()
+    time.sleep(1)
     menu_principal()
 
 if __name__ == "__main__":
